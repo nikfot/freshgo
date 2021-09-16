@@ -193,7 +193,7 @@ func deleteCurrentVersion() error {
 	if err != nil {
 		return err
 	}
-	err = files.Remove(curDir)
+	err = files.Remove(strings.TrimSpace(curDir))
 	if err != nil {
 		return err
 	}

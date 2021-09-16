@@ -39,7 +39,7 @@ func GetFileNameFromPath(dir string) string {
 }
 
 func Remove(dir string) error {
-	if _, err := os.Stat(dir); os.IsExist(err) {
+	if _, err := os.Stat(dir); !os.IsExist(err) {
 		var out bytes.Buffer
 		cmd := exec.Command("/bin/sh", "-c", "sudo rm -rf "+dir)
 		cmd.Stdout = &out
