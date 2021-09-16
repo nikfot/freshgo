@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"go-versions/versions"
+	"go-versions/internal/versions"
 
 	"github.com/spf13/cobra"
 )
