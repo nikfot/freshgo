@@ -19,7 +19,7 @@ const (
 	versionTmpPath = "/tmp/go-versions/"
 )
 
-func PrintLatest() {
+func Latest() {
 	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
 	resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
 	if err != nil {
@@ -74,10 +74,10 @@ func PrintLatest() {
 func InstallLatestLinux(body string) error {
 	z := html.NewTokenizer(strings.NewReader(body))
 	found := false
+	var downloadPath string
 latest_version:
 	for !found {
 		tt := z.Next()
-
 		switch {
 		case tt == html.ErrorToken:
 			// End of the document, we're done
@@ -91,7 +91,9 @@ latest_version:
 						return err
 					}
 				}
-				err := downloadToPath("https://golang.org"+t.Attr[1].Val, versionTmpPath+files.GetFileNameFromPath(t.Attr[1].Val))
+				downloadPath = versionTmpPath + files.GetFileNameFromPath(t.Attr[1].Val)
+				fmt.Printf(" - Downloading version %s to path %s.\n", t.Attr[1].Val, downloadPath)
+				err := downloadToPath("https://golang.org"+t.Attr[1].Val, downloadPath)
 				if err != nil {
 					return err
 				}
@@ -99,10 +101,39 @@ latest_version:
 			}
 		}
 	}
-	err := deleteCurrentVersion()
+	if downloadPath == "" {
+		return fmt.Errorf("error: no path to dowloaded files")
+	}
+	fmt.Println(" - Deleting current version.")
+	curGoSrcPath, err := files.GetGoSrcPath()
 	if err != nil {
 		return err
 	}
+	err = deleteCurrentVersion()
+	if err != nil {
+		return err
+	}
+	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPath)
+	err = files.UnTarGz(downloadPath, versionTmpPath)
+	// err = otiai10.Copy(downloadPath, curGoSrcPath)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPath, curGoSrcPath)
+	err = files.SudoCopyDir(versionTmpPath+"/go", curGoSrcPath)
+	if err != nil {
+		fmt.Println(err)
+	}
+	u, err := CurrentVersion()
+	if err != nil {
+		fmt.Println(err)
+	}
+	updated, err := vers.NewVersion(u)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("Successfully updated go version to: ", updated)
 	return nil
 }
 func downloadToPath(url string, path string) error {
@@ -113,7 +144,6 @@ func downloadToPath(url string, path string) error {
 	}
 	out, err := os.Create(path)
 	if err != nil {
-		fmt.Println("DDDDDDDDDDDDDD")
 		return err
 	}
 	defer out.Close()

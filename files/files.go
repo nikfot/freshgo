@@ -1,10 +1,14 @@
 package files
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +20,11 @@ func GetGoSrcPath() (dir string, err error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.ReplaceAll(out.String(), "/bin/go", ""), nil
+	path := strings.ReplaceAll(out.String(), "/bin/go", "")
+	if path == "" {
+		return "", fmt.Errorf("error: no go src path")
+	}
+	return path, nil
 }
 
 func BackUp(dir string, curVersion string) error {
@@ -50,4 +58,70 @@ func Remove(dir string) error {
 		return nil
 	}
 	return fmt.Errorf("error: file %s does not exist", dir)
+}
+func UnTarGz(tarGzName, xpath string) (err error) {
+	gzreader, err := os.Open(tarGzName)
+	defer gzreader.Close()
+	if err != nil {
+		return err
+	}
+	ungzStream, err := gzip.NewReader(gzreader)
+	if err != nil {
+		return err
+	}
+	tarStream := tar.NewReader(ungzStream)
+	absPath, err := filepath.Abs(xpath)
+	// untar each segment
+	for {
+		hdr, err := tarStream.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		// determine proper file path info
+		finfo := hdr.FileInfo()
+		fileName := hdr.Name
+		absFileName := filepath.Join(absPath, fileName)
+		// if a dir, create it, then go to next segment
+		if finfo.Mode().IsDir() {
+			if err := os.MkdirAll(absFileName, 0755); err != nil {
+				return err
+			}
+			continue
+		}
+		// create new file with original file mode
+		file, err := os.OpenFile(
+			absFileName,
+			os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+			finfo.Mode().Perm(),
+		)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("x %s\n", absFileName)
+		n, cpErr := io.Copy(file, tarStream)
+		if closeErr := file.Close(); closeErr != nil {
+			return err
+		}
+		if cpErr != nil {
+			return cpErr
+		}
+		if n != finfo.Size() {
+			return fmt.Errorf("wrote %d, want %d", n, finfo.Size())
+		}
+	}
+	return nil
+}
+
+func SudoCopyDir(src, dst string) error {
+	var out bytes.Buffer
+	cmd := exec.Command("sudo", "cp", "-r", src, dst)
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -18,3 +18,6 @@ build: clean
 
 clean:
 	rm -f ${MAIN_PATH}/${BINARY}
+
+run: build
+	cd cmd/go-versions && ./go-versions latest

@@ -12,7 +12,7 @@ var getLatest = &cobra.Command{
 	Short: "Get the latest go version semantic version",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		versions.PrintLatest()
+		versions.Latest()
 	},
 }
 

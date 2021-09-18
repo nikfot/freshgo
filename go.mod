@@ -1,4 +1,4 @@
-module go-versions
+module freshgo
 
 go 1.16
 
