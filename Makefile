@@ -1,13 +1,13 @@
 # Build time info
-PACKAGE = go-versions
+PACKAGE = freshgo
 VERSION=$(shell git describe --tags)
 BUILD=$(shell git rev-parse HEAD)
 DATE=$(shell git show -s --format=%ci ${BUILD})
-NAME?=go-versions
-MAIN_PATH=cmd/go-versions
+NAME?=freshgo
+MAIN_PATH=cmd/freshgo
 
 # Binary output file
-BINARY  = go-versions
+BINARY  = freshgo
 
 # Setup ldflags
 LDFLAGS = -ldflags "-X 'alethea-elite/pkg/logger.AppName=$(NAME)' -X '$(PACKAGE)/health.Version=$(VERSION)' -X '$(PACKAGE)/health.Build=$(BUILD)' -X '$(PACKAGE)/health.Date=$(DATE)'"
@@ -20,4 +20,4 @@ clean:
 	rm -f ${MAIN_PATH}/${BINARY}
 
 run: build
-	cd cmd/go-versions && ./go-versions latest
+	cd cmd/freshgo && ./go-versions latest

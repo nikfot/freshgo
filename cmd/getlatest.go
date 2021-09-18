@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"go-versions/internal/versions"
+	"freshgo/internal/versions"
 
 	"github.com/spf13/cobra"
 )

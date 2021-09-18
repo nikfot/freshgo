@@ -20,7 +20,7 @@ func GetGoSrcPath() (dir string, err error) {
 	if err != nil {
 		return "", err
 	}
-	path := strings.ReplaceAll(out.String(), "/bin/go", "")
+	path := strings.TrimSpace(strings.ReplaceAll(out.String(), "/bin/go", ""))
 	if path == "" {
 		return "", fmt.Errorf("error: no go src path")
 	}
@@ -100,7 +100,7 @@ func UnTarGz(tarGzName, xpath string) (err error) {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("x %s\n", absFileName)
+		//fmt.Printf("x %s\n", absFileName)
 		n, cpErr := io.Copy(file, tarStream)
 		if closeErr := file.Close(); closeErr != nil {
 			return err

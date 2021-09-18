@@ -3,8 +3,8 @@ package versions
 import (
 	"bytes"
 	"fmt"
-	"go-versions/files"
-	gvhttp "go-versions/pkg/http"
+	"freshgo/files"
+	gvhttp "freshgo/pkg/http"
 	"io"
 	"os"
 	"os/exec"
@@ -16,9 +16,31 @@ import (
 )
 
 const (
-	versionTmpPath = "/tmp/go-versions/"
+	versionTmpPath = "/tmp/freshgo/"
 )
 
+func Select(selection string) {
+	if selection == "latest" {
+		cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
+		resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
+		if err != nil {
+			fmt.Println("Error getting versions: ", err)
+		}
+		err = InstallLatestLinux(string(resp))
+		if err != nil {
+			fmt.Println(err)
+		}
+		return
+	}
+	selectVers, err := vers.NewVersion(selection)
+	if err != nil {
+		fmt.Println(err)
+	}
+	err = InstallVersion(selectVers)
+	if err != nil {
+		fmt.Println(err)
+	}
+}
 func Latest() {
 	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
 	resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
@@ -70,7 +92,52 @@ func Latest() {
 		}
 	}
 }
-
+func InstallVersion(version *vers.Version) error {
+	if _, err := os.Stat(versionTmpPath); os.IsNotExist(err) {
+		err := os.Mkdir(versionTmpPath, os.ModePerm)
+		if err != nil {
+			return err
+		}
+	}
+	downloadPath := versionTmpPath + files.GetFileNameFromPath(version.String())
+	fmt.Printf(" - Downloading version %s to path %s.\n", version, downloadPath)
+	dlVers := dlGoVersionFormat(version.String())
+	err := downloadToPath("https://golang.org"+dlVers, downloadPath)
+	if err != nil {
+		return err
+	}
+	fmt.Println(" - Deleting current version.")
+	curGoSrcPath, err := files.GetGoSrcPath()
+	if err != nil {
+		return err
+	}
+	err = deleteCurrentVersion()
+	if err != nil {
+		return err
+	}
+	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPath)
+	err = files.UnTarGz(downloadPath, versionTmpPath)
+	// err = otiai10.Copy(downloadPath, curGoSrcPath)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPath, curGoSrcPath)
+	err = files.SudoCopyDir(versionTmpPath+"/go", curGoSrcPath)
+	if err != nil {
+		fmt.Println(err)
+	}
+	u, err := CurrentVersion()
+	if err != nil {
+		fmt.Println(err)
+	}
+	updated, err := vers.NewVersion(u)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("Successfully updated go version to: ", updated)
+	return nil
+}
 func InstallLatestLinux(body string) error {
 	z := html.NewTokenizer(strings.NewReader(body))
 	found := false
@@ -228,4 +295,8 @@ func deleteCurrentVersion() error {
 		return err
 	}
 	return nil
+}
+
+func dlGoVersionFormat(version string) string {
+	return "/dl/go" + version + ".linux-amd64.tar.gz"
 }

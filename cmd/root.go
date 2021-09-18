@@ -29,9 +29,9 @@ var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "go-versions",
+	Use:   "freshgo",
 	Short: "Handle go versions effectively",
-	Long: `	Using go-versions you can check for:
+	Long: `	Using freshgo you can check for:
 			* latest version
 			* update to latest version 
 			* get info on go version metadata`,
@@ -53,7 +53,7 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.go-versions.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.freshgo.yaml)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
@@ -70,9 +70,9 @@ func initConfig() {
 		home, err := homedir.Dir()
 		cobra.CheckErr(err)
 
-		// Search config in home directory with name ".go-versions" (without extension).
+		// Search config in home directory with name ".freshgo" (without extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".go-versions")
+		viper.SetConfigName(".freshgo")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
