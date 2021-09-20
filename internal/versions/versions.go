@@ -17,6 +17,8 @@ import (
 
 const (
 	versionTmpPath = "/tmp/freshgo/"
+	linuxOS        = "linux-amd64"
+	versionPrefix  = "<a class=\"download\" href=\"/dl/"
 )
 
 func Select(selection string) {
@@ -26,7 +28,7 @@ func Select(selection string) {
 		if err != nil {
 			fmt.Println("Error getting versions: ", err)
 		}
-		err = InstallLatestLinux(string(resp))
+		err = InstallLatestLinux(string(resp), linuxOS)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -86,7 +88,7 @@ func Latest() {
 			}
 
 		}
-		err := InstallLatestLinux(string(resp))
+		err := InstallLatestLinux(string(resp), linuxOS)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -138,7 +140,29 @@ func InstallVersion(version *vers.Version) error {
 	fmt.Println("Successfully updated go version to: ", updated)
 	return nil
 }
-func InstallLatestLinux(body string) error {
+func List() error {
+	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
+	resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
+	if err != nil {
+		fmt.Println("Error getting versions: ", err)
+	}
+	z := html.NewTokenizer(strings.NewReader(string(resp)))
+	for z.Next() != html.ErrorToken {
+		tt := z.Next()
+		switch {
+		case tt == html.ErrorToken:
+			// End of the document, we're done
+			return fmt.Errorf("could not find latest linux version metadata")
+		case tt == html.StartTagToken:
+			t := z.Token()
+			if t.Data == "a" && versionTag(t.Attr, linuxOS) {
+				fmt.Print("• " + parseVersion(t.Attr[1].Val) + " ")
+			}
+		}
+	}
+	return nil
+}
+func InstallLatestLinux(body, system string) error {
 	z := html.NewTokenizer(strings.NewReader(body))
 	found := false
 	var downloadPath string
@@ -151,7 +175,7 @@ latest_version:
 			return fmt.Errorf("could not find latest linux version metadata")
 		case tt == html.StartTagToken:
 			t := z.Token()
-			if t.Data == "a" && linuxLatestTag(t.Attr) {
+			if t.Data == "a" && versionTag(t.Attr, system) {
 				if _, err := os.Stat(versionTmpPath); os.IsNotExist(err) {
 					err := os.Mkdir(versionTmpPath, os.ModePerm)
 					if err != nil {
@@ -231,7 +255,7 @@ func LookUpLatest(body string) (version string) {
 		case tt == html.StartTagToken:
 			t := z.Token()
 			if t.Data == "a" && latestVersionTag(t.Attr) {
-				version = parseVersion(t.Attr[1].Val)
+				version = parseVersionFile(t.Attr[1].Val)
 				found = true
 			}
 		}
@@ -242,14 +266,17 @@ func LookUpLatest(body string) (version string) {
 func latestVersionTag(attr []html.Attribute) bool {
 	return (attr[0].Key == "class" && attr[0].Val == "download" && attr[1].Key == "href" && strings.HasPrefix(attr[1].Val, "/dl/go1"))
 }
-func linuxLatestTag(attr []html.Attribute) bool {
-	return (attr[0].Key == "class" && attr[0].Val == "download" && attr[1].Key == "href" && strings.Contains(attr[1].Val, "linux-amd64"))
+func versionTag(attr []html.Attribute, system string) bool {
+	return (attr[0].Key == "class" && attr[0].Val == "download" && attr[1].Key == "href" && strings.Contains(attr[1].Val, system))
 }
-func parseVersion(value string) (version string) {
+func parseVersionFile(value string) (version string) {
 	version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), ".src.tar.gz")
 	return version
 }
-
+func parseVersion(value string) (version string) {
+	version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), "."+linuxOS+".tar.gz")
+	return version
+}
 func CurrentVersion() (string, error) {
 	var out bytes.Buffer
 	cmd := exec.Command("go", "version")
