@@ -3,7 +3,7 @@ package versions
 import (
 	"bytes"
 	"fmt"
-	"freshgo/files"
+	"freshgo/internal/files"
 	gvhttp "freshgo/pkg/http"
 	"io"
 	"os"
@@ -15,20 +15,26 @@ import (
 	"golang.org/x/net/html"
 )
 
+var (
+	OS           string
+	Architecture string
+)
+
 const (
-	versionTmpPath = "/tmp/freshgo/"
-	linuxOS        = "linux-amd64"
-	versionPrefix  = "<a class=\"download\" href=\"/dl/"
+	versionTmpPathLin = "/tmp/freshgo/"
+
+	//linuxOS        = "linux-amd64"
+	//versionPrefix = "<a class=\"download\" href=\"/dl/"
 )
 
 func Select(selection string) {
 	if selection == "latest" {
 		cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
-		resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
+		resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
 		if err != nil {
 			fmt.Println("Error getting versions: ", err)
 		}
-		err = InstallLatestLinux(string(resp), linuxOS)
+		err = InstallLatest(string(resp), strings.ToLower(OS+"-"+Architecture))
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -45,7 +51,7 @@ func Select(selection string) {
 }
 func Latest() {
 	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
-	resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
+	resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
 	if err != nil {
 		fmt.Println("Error getting versions: ", err)
 	}
@@ -77,7 +83,7 @@ func Latest() {
 			return
 		}
 		if promptBackup() {
-			curDir, err := files.GetGoSrcPath()
+			curDir, err := files.GetGoSrcPath(OS)
 			if err != nil {
 				fmt.Println("Error getting go bin dir: ", err)
 			}
@@ -88,28 +94,29 @@ func Latest() {
 			}
 
 		}
-		err := InstallLatestLinux(string(resp), linuxOS)
+		err := InstallLatest(string(resp), strings.ToLower(OS+"-"+Architecture))
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 }
 func InstallVersion(version *vers.Version) error {
-	if _, err := os.Stat(versionTmpPath); os.IsNotExist(err) {
-		err := os.Mkdir(versionTmpPath, os.ModePerm)
+	if _, err := os.Stat(versionTmpPathLin); os.IsNotExist(err) {
+		err := os.Mkdir(versionTmpPathLin, os.ModePerm)
 		if err != nil {
 			return err
 		}
 	}
-	downloadPath := versionTmpPath + files.GetFileNameFromPath(version.String())
+	downloadPath := versionTmpPathLin + files.GetFileNameFromPath(version.String())
 	fmt.Printf(" - Downloading version %s to path %s.\n", version, downloadPath)
 	dlVers := dlGoVersionFormat(version.String())
-	err := downloadToPath("https://golang.org"+dlVers, downloadPath)
+	fmt.Println(dlVers)
+	err := downloadToPath("https://go.dev"+dlVers, downloadPath)
 	if err != nil {
 		return err
 	}
 	fmt.Println(" - Deleting current version.")
-	curGoSrcPath, err := files.GetGoSrcPath()
+	curGoSrcPath, err := files.GetGoSrcPath(OS)
 	if err != nil {
 		return err
 	}
@@ -117,15 +124,15 @@ func InstallVersion(version *vers.Version) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPath)
-	err = files.UnTarGz(downloadPath, versionTmpPath)
+	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPathLin)
+	err = files.UnTarGz(downloadPath, versionTmpPathLin)
 	// err = otiai10.Copy(downloadPath, curGoSrcPath)
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
-	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPath, curGoSrcPath)
-	err = files.SudoCopyDir(versionTmpPath+"/go", curGoSrcPath)
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin, curGoSrcPath)
+	err = files.SudoCopyDir(versionTmpPathLin+"/go", curGoSrcPath)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -142,27 +149,36 @@ func InstallVersion(version *vers.Version) error {
 }
 func List() error {
 	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
-	resp, err := cli.Request("GET", "https://golang.org/dl/", nil, "", "", nil)
+	resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
 	if err != nil {
 		fmt.Println("Error getting versions: ", err)
 	}
 	z := html.NewTokenizer(strings.NewReader(string(resp)))
 	for z.Next() != html.ErrorToken {
 		tt := z.Next()
+		found := false
 		switch {
 		case tt == html.ErrorToken:
 			// End of the document, we're done
-			return fmt.Errorf("could not find latest linux version metadata")
+			return fmt.Errorf("could not find latest %s-%s version metadata", OS, Architecture)
 		case tt == html.StartTagToken:
 			t := z.Token()
-			if t.Data == "a" && versionTag(t.Attr, linuxOS) {
+			if len(t.Attr) > 1 {
+				for i := range t.Attr {
+					if t.Attr[i].Key == "id" && strings.Contains(t.Attr[i].Val, "go") {
+						fmt.Print("• " + strings.TrimPrefix(t.Attr[i].Val, "go") + " ")
+						found = true
+					}
+				}
+			}
+			if t.Data == "a" && versionTag(t.Attr, strings.ToLower(OS+"-"+Architecture)) && !found {
 				fmt.Print("• " + parseVersion(t.Attr[1].Val) + " ")
 			}
 		}
 	}
 	return nil
 }
-func InstallLatestLinux(body, system string) error {
+func InstallLatest(body, system string) error {
 	z := html.NewTokenizer(strings.NewReader(body))
 	found := false
 	var downloadPath string
@@ -172,17 +188,17 @@ latest_version:
 		switch {
 		case tt == html.ErrorToken:
 			// End of the document, we're done
-			return fmt.Errorf("could not find latest linux version metadata")
+			return fmt.Errorf("could not find latest %s-%s version metadata", OS, Architecture)
 		case tt == html.StartTagToken:
 			t := z.Token()
 			if t.Data == "a" && versionTag(t.Attr, system) {
-				if _, err := os.Stat(versionTmpPath); os.IsNotExist(err) {
-					err := os.Mkdir(versionTmpPath, os.ModePerm)
+				if _, err := os.Stat(versionTmpPathLin); os.IsNotExist(err) {
+					err := os.Mkdir(versionTmpPathLin, os.ModePerm)
 					if err != nil {
 						return err
 					}
 				}
-				downloadPath = versionTmpPath + files.GetFileNameFromPath(t.Attr[1].Val)
+				downloadPath = versionTmpPathLin + files.GetFileNameFromPath(t.Attr[1].Val)
 				fmt.Printf(" - Downloading version %s to path %s.\n", t.Attr[1].Val, downloadPath)
 				err := downloadToPath("https://golang.org"+t.Attr[1].Val, downloadPath)
 				if err != nil {
@@ -196,7 +212,7 @@ latest_version:
 		return fmt.Errorf("error: no path to dowloaded files")
 	}
 	fmt.Println(" - Deleting current version.")
-	curGoSrcPath, err := files.GetGoSrcPath()
+	curGoSrcPath, err := files.GetGoSrcPath(OS)
 	if err != nil {
 		return err
 	}
@@ -204,15 +220,15 @@ latest_version:
 	if err != nil {
 		return err
 	}
-	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPath)
-	err = files.UnTarGz(downloadPath, versionTmpPath)
+	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPathLin)
+	err = files.UnTarGz(downloadPath, versionTmpPathLin)
 	// err = otiai10.Copy(downloadPath, curGoSrcPath)
 	if err != nil {
 		fmt.Println(err)
 		return err
 	}
-	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPath, curGoSrcPath)
-	err = files.SudoCopyDir(versionTmpPath+"/go", curGoSrcPath)
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin, curGoSrcPath)
+	err = files.SudoCopyDir(versionTmpPathLin+"/go", curGoSrcPath)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -270,11 +286,21 @@ func versionTag(attr []html.Attribute, system string) bool {
 	return (attr[0].Key == "class" && attr[0].Val == "download" && attr[1].Key == "href" && strings.Contains(attr[1].Val, system))
 }
 func parseVersionFile(value string) (version string) {
-	version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), ".src.tar.gz")
+	switch strings.ToLower(OS) {
+	case "windows":
+		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), ".src.zip")
+	default:
+		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), ".src.tar.gz")
+	}
 	return version
 }
 func parseVersion(value string) (version string) {
-	version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), "."+linuxOS+".tar.gz")
+	switch strings.ToLower(OS) {
+	case "windows":
+		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), "."+strings.ToLower(OS+"-"+Architecture)+".zip")
+	default:
+		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), "."+strings.ToLower(OS+"-"+Architecture)+".tar.gz")
+	}
 	return version
 }
 func CurrentVersion() (string, error) {
@@ -303,7 +329,7 @@ func promptBackup() bool {
 }
 
 func Upgrade(latest bool, selection string) error {
-	dir, err := files.GetGoSrcPath()
+	dir, err := files.GetGoSrcPath(OS)
 	if err != nil {
 		return err
 	}
@@ -313,7 +339,7 @@ func Upgrade(latest bool, selection string) error {
 }
 
 func deleteCurrentVersion() error {
-	curDir, err := files.GetGoSrcPath()
+	curDir, err := files.GetGoSrcPath(OS)
 	if err != nil {
 		return err
 	}
@@ -325,5 +351,17 @@ func deleteCurrentVersion() error {
 }
 
 func dlGoVersionFormat(version string) string {
-	return "/dl/go" + version + ".linux-amd64.tar.gz"
+	switch strings.ToLower(OS) {
+	case "windows":
+		return "/dl/go" + version + "." + strings.ToLower(OS) + "-" + strings.ToLower(Architecture) + ".zip"
+	default:
+		return "/dl/go" + version + "." + strings.ToLower(OS) + "-" + strings.ToLower(Architecture) + ".tar.gz"
+	}
+}
+
+func init() {
+	if OS == "" {
+		OS = "linux"
+		Architecture = "amd64"
+	}
 }
