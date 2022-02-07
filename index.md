@@ -1,5 +1,4 @@
 ## Freshgo, the golang version manager
-https://quasilyte.dev/gopherkon/?state=0c0305100307090203070a000000000000#
 
 ![frehs go with Freshgo!](https://github.com/nikfot/freshgo/blob/gh-pages/freshgo.png?raw=true)
 
