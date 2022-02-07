@@ -33,7 +33,7 @@ freshgo latest
 ```
 #### List available go versions
 ```
-freshgo latest
+freshgo list
 ```
 #### Select specific version
 ```
