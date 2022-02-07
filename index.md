@@ -6,10 +6,26 @@ Use freshgo to **easily** install and manage your golang versions.
 
 freshgo can install the latest go version, or any given version of go. 
 
-### Get easily started
+### Clone the repo
+Clone the repo.
+```
+git clone git@github.com:nikfot/freshgo.git
+```
+If you already have go installed build the binary:
+```
+cd freshgo && make
+```
+### Download the binary
+```
+wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo
+```
+
+## Get easily started
 
 Freshgo is an easy way to avoid manual actions for installing go and keeping it up to date.
 You do not need **git** or any other tool to make this work.
+
+
 
 #### Get latest go version
 ```
