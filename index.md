@@ -1,6 +1,6 @@
 ## Freshgo, the golang version manager
 
-![frehs go with Freshgo!](https://github.com/nikfot/freshgo/blob/gh-pages/freshgo.png?raw=true)
+![fresh go with Freshgo!](https://github.com/nikfot/freshgo/blob/gh-pages/freshgo.png?raw=true)
 
 Use freshgo to **easily** install and manage your golang versions.
 
@@ -22,7 +22,7 @@ cd freshgo && make
 ```
 ### Download the binary
 ```
-wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo
+wget wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo?raw=true > freshgo && chmod ug+x freshgo
 ```
 
 ## Get easily started
