@@ -11,6 +11,11 @@ Clone the repo.
 ```
 git clone git@github.com:nikfot/freshgo.git
 ```
+or 
+```
+git clone git clone https://github.com/nikfot/freshgo
+```
+
 If you already have go installed build the binary:
 ```
 cd freshgo && make
