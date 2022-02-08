@@ -22,7 +22,7 @@ cd freshgo && make
 ```
 ### Download the binary
 ```
-wget wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo?raw=true -O freshgo && chmod ug+x freshgo
+wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo?raw=true -O freshgo && chmod ug+x freshgo
 ```
 
 ## Get easily started
