@@ -11,9 +11,10 @@ BINARY  = freshgo
 
 build: clean
 	cd ${MAIN_PATH}; \
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build  -v -a -o $(BINARY)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build  -v -a -tags netgo -o $(BINARY)
 
 clean:
+	go clean
 	rm -f ${MAIN_PATH}/${BINARY}
 
 run: build

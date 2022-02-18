@@ -28,15 +28,26 @@ const (
 )
 
 func Select(selection string) {
+	_, err := CurrentVersion()
+	isUpgrade := true
+	if err != nil {
+		isUpgrade = false
+	}
 	if selection == "latest" {
 		cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
 		resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
 		if err != nil {
 			fmt.Println("Error getting versions: ", err)
 		}
-		err = InstallLatest(string(resp), strings.ToLower(OS+"-"+Architecture))
+		latest, err := vers.NewVersion(LookUpLatest(string(resp)))
 		if err != nil {
 			fmt.Println(err)
+			return
+		}
+		err = InstallVersion(latest, isUpgrade)
+		if err != nil {
+			fmt.Println(err)
+			return
 		}
 		return
 	}
@@ -44,7 +55,7 @@ func Select(selection string) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	err = InstallVersion(selectVers)
+	err = InstallVersion(selectVers, isUpgrade)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -57,35 +68,43 @@ func Latest() {
 	}
 	latest, err := vers.NewVersion(LookUpLatest(string(resp)))
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("error: could not get latest version.")
+		return
 	}
+	comp := 1
+	current := &vers.Version{}
 	c, err := CurrentVersion()
+	isUpgrade := false
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("[INFO]: no installed go version.")
+	} else {
+		isUpgrade = true
+		current, err = vers.NewVersion(c)
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println(current)
+		comp = latest.Compare(current)
+		is := ""
+		switch comp {
+		case -1:
+			is = "older than"
+		case 1:
+			is = "newer than"
+		default:
+			is = "equal to"
+		}
+		fmt.Printf("The latest go version is %v, which is %s the current %v \n", latest.String(), is, current.String())
 	}
-	current, err := vers.NewVersion(c)
-	if err != nil {
-		fmt.Println(err)
-	}
-	comp := latest.Compare(current)
-	is := ""
-	switch comp {
-	case -1:
-		is = "older than"
-	case 1:
-		is = "newer than"
-	default:
-		is = "equal to"
-	}
-	fmt.Printf("The latest go version is %v, which is %s the current %v \n", latest.String(), is, current.String())
 	if comp == 1 {
-		if !promptUpgrade() {
+		if !promptInstall(isUpgrade) {
 			return
 		}
-		if promptBackup() {
+		if promptBackup(isUpgrade) {
 			curDir, err := files.GetGoSrcPath(OS)
 			if err != nil {
 				fmt.Println("Error getting go bin dir: ", err)
+				return
 			}
 			err = files.BackUp(curDir, current.String())
 			if err != nil {
@@ -94,13 +113,18 @@ func Latest() {
 			}
 
 		}
-		err := InstallLatest(string(resp), strings.ToLower(OS+"-"+Architecture))
+		err := InstallVersion(latest, isUpgrade)
 		if err != nil {
 			fmt.Println(err)
 		}
 	}
 }
-func InstallVersion(version *vers.Version) error {
+
+func InstallVersion(version *vers.Version, isUpgrade bool) error {
+	curGoSrcPath := "/usr/local/go"
+	if _, err := os.Stat(curGoSrcPath); err == nil {
+		os.MkdirAll(curGoSrcPath, os.ModePerm)
+	}
 	if _, err := os.Stat(versionTmpPathLin); os.IsNotExist(err) {
 		err := os.Mkdir(versionTmpPathLin, os.ModePerm)
 		if err != nil {
@@ -110,18 +134,21 @@ func InstallVersion(version *vers.Version) error {
 	downloadPath := versionTmpPathLin + files.GetFileNameFromPath(version.String())
 	fmt.Printf(" - Downloading version %s to path %s.\n", version, downloadPath)
 	dlVers := dlGoVersionFormat(version.String())
-	fmt.Println(dlVers)
 	err := downloadToPath("https://go.dev"+dlVers, downloadPath)
 	if err != nil {
 		return err
 	}
-	fmt.Println(" - Deleting current version.")
-	curGoSrcPath, err := files.GetGoSrcPath(OS)
-	if err != nil {
-		return err
-	}
-	err = deleteCurrentVersion()
-	if err != nil {
+	if isUpgrade {
+		curGoSrcPath, err = files.GetGoSrcPath(OS)
+		if err != nil {
+			return err
+		}
+		fmt.Println(" - Deleting current version.")
+		err = deleteCurrentVersion()
+		if err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPathLin)
@@ -136,6 +163,12 @@ func InstallVersion(version *vers.Version) error {
 	if err != nil {
 		fmt.Println(err)
 	}
+	if !isUpgrade {
+		err := files.ExportToPath(curGoSrcPath + "/bin")
+		if err != nil {
+			return err
+		}
+	}
 	u, err := CurrentVersion()
 	if err != nil {
 		fmt.Println(err)
@@ -147,6 +180,7 @@ func InstallVersion(version *vers.Version) error {
 	fmt.Println("Successfully updated go version to: ", updated)
 	return nil
 }
+
 func List() error {
 	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
 	resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
@@ -178,71 +212,7 @@ func List() error {
 	}
 	return nil
 }
-func InstallLatest(body, system string) error {
-	z := html.NewTokenizer(strings.NewReader(body))
-	found := false
-	var downloadPath string
-latest_version:
-	for !found {
-		tt := z.Next()
-		switch {
-		case tt == html.ErrorToken:
-			// End of the document, we're done
-			return fmt.Errorf("could not find latest %s-%s version metadata", OS, Architecture)
-		case tt == html.StartTagToken:
-			t := z.Token()
-			if t.Data == "a" && versionTag(t.Attr, system) {
-				if _, err := os.Stat(versionTmpPathLin); os.IsNotExist(err) {
-					err := os.Mkdir(versionTmpPathLin, os.ModePerm)
-					if err != nil {
-						return err
-					}
-				}
-				downloadPath = versionTmpPathLin + files.GetFileNameFromPath(t.Attr[1].Val)
-				fmt.Printf(" - Downloading version %s to path %s.\n", t.Attr[1].Val, downloadPath)
-				err := downloadToPath("https://golang.org"+t.Attr[1].Val, downloadPath)
-				if err != nil {
-					return err
-				}
-				break latest_version
-			}
-		}
-	}
-	if downloadPath == "" {
-		return fmt.Errorf("error: no path to dowloaded files")
-	}
-	fmt.Println(" - Deleting current version.")
-	curGoSrcPath, err := files.GetGoSrcPath(OS)
-	if err != nil {
-		return err
-	}
-	err = deleteCurrentVersion()
-	if err != nil {
-		return err
-	}
-	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPathLin)
-	err = files.UnTarGz(downloadPath, versionTmpPathLin)
-	// err = otiai10.Copy(downloadPath, curGoSrcPath)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin, curGoSrcPath)
-	err = files.SudoCopyDir(versionTmpPathLin+"/go", curGoSrcPath)
-	if err != nil {
-		fmt.Println(err)
-	}
-	u, err := CurrentVersion()
-	if err != nil {
-		fmt.Println(err)
-	}
-	updated, err := vers.NewVersion(u)
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("Successfully updated go version to: ", updated)
-	return nil
-}
+
 func downloadToPath(url string, path string) error {
 	cli := gvhttp.NewHTTPClient("GoDownload", "", 60*time.Second, nil, false)
 	resp, err := cli.Request("GET", url, nil, "", "", nil)
@@ -258,6 +228,7 @@ func downloadToPath(url string, path string) error {
 	_, err = io.Copy(out, strings.NewReader(string(resp)))
 	return err
 }
+
 func LookUpLatest(body string) (version string) {
 	z := html.NewTokenizer(strings.NewReader(body))
 	found := false
@@ -314,28 +285,25 @@ func CurrentVersion() (string, error) {
 	return strings.TrimPrefix(strings.Split(out.String(), " ")[2], "go"), nil
 }
 
-func promptUpgrade() bool {
-	fmt.Print("Would you like to upgrade?[Y/n]")
-	var prompt string
-	fmt.Scanln(&prompt)
-	return prompt == "Y"
-}
-
-func promptBackup() bool {
-	fmt.Print("Would you like to backup current go-version[Y/n]")
-	var prompt string
-	fmt.Scanln(&prompt)
-	return prompt == "Y"
-}
-
-func Upgrade(latest bool, selection string) error {
-	dir, err := files.GetGoSrcPath(OS)
-	if err != nil {
-		return err
+func promptInstall(upgrade bool) bool {
+	if upgrade {
+		fmt.Print("Would you like to upgrade?[Y/n]")
+	} else {
+		fmt.Print("Would you like to install?[Y/n]")
 	}
-	fmt.Println(dir)
-	//backup()
-	return nil
+	var prompt string
+	fmt.Scanln(&prompt)
+	return prompt == "Y"
+}
+
+func promptBackup(upgrade bool) bool {
+	if upgrade {
+		fmt.Print("Would you like to backup current go-version[Y/n]")
+		var prompt string
+		fmt.Scanln(&prompt)
+		return prompt == "Y"
+	}
+	return false
 }
 
 func deleteCurrentVersion() error {
@@ -343,9 +311,13 @@ func deleteCurrentVersion() error {
 	if err != nil {
 		return err
 	}
-	err = files.Remove(strings.TrimSpace(curDir))
-	if err != nil {
-		return err
+	if curDir != "" {
+		err = files.Remove(strings.TrimSpace(curDir))
+		if err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("%s", "error: no go src path exists")
 	}
 	return nil
 }

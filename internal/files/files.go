@@ -14,22 +14,23 @@ import (
 
 func GetGoSrcPath(OS string) (dir string, err error) {
 	var out bytes.Buffer
+	var stderr bytes.Buffer
 	path := ""
 	switch strings.ToLower(OS) {
 	case "windows":
 	default:
 		cmd := exec.Command("which", "go")
 		cmd.Stdout = &out
+		cmd.Stderr = &stderr
 		err = cmd.Run()
 		if err != nil {
 			return "", err
 		}
 		path = strings.TrimSpace(strings.ReplaceAll(out.String(), "/bin/go", ""))
 		if path == "" {
-			return "", fmt.Errorf("error: no go src path")
+			return "", nil
 		}
 	}
-
 	return path, nil
 }
 
@@ -123,9 +124,33 @@ func UnTarGz(tarGzName, xpath string) (err error) {
 
 func SudoCopyDir(src, dst string) error {
 	var out bytes.Buffer
-	cmd := exec.Command("sudo", "cp", "-r", src, dst)
+	var cmd *exec.Cmd
+	if sudoExists() {
+		cmd = exec.Command("sudo", "cp", "-r", src, dst)
+	} else {
+		cmd = exec.Command("cp", "-r", src, dst)
+	}
 	cmd.Stdout = &out
 	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func sudoExists() bool {
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := exec.Command("/bin/sh", "-c", `"which sudo"`)
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return err == nil
+}
+
+func ExportToPath(dir string) error {
+	path := os.Getenv("PATH")
+	err := os.Setenv("PATH", path+":"+dir)
 	if err != nil {
 		return err
 	}
