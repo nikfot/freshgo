@@ -1,12 +1,28 @@
 ## Freshgo, the golang version manager
+- ***lightweight*** go binary
+- ***http-scraping*** live go version catalog
+- ***no git*** installation required
 
 ![fresh go with Freshgo!](https://github.com/nikfot/freshgo/blob/gh-pages/freshgo.png?raw=true)
 
 Use freshgo to **easily** install and manage your golang versions.
+Add freshgo in a cron or your .profile to remind you when a new go version is available!
 
-freshgo can install the latest go version, or any given version of go. 
+_freshgo_ can install the latest go version, or any given version of go. 
 
-### Clone the repo
+### Download the binary
+Download the latest binary and get started with Go in no time!
+
+```
+wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo?raw=true -O freshgo && chmod ug+x freshgo && sudo mv freshgo /usr/local/bin/freshgo
+```
+_This will download the latest binary and install it in your $PATH_
+
+
+### Contribute
+You are welcome to contribute any time!
+Inform me on an issue or make suggestions or add your own repo.
+
 Clone the repo.
 ```
 git clone git@github.com:nikfot/freshgo.git
@@ -19,10 +35,6 @@ git clone git clone https://github.com/nikfot/freshgo
 If you already have go installed build the binary:
 ```
 cd freshgo && make
-```
-### Download the binary
-```
-wget https://github.com/nikfot/freshgo/blob/gh-pages/freshgo?raw=true -O freshgo && chmod ug+x freshgo
 ```
 
 ## Get easily started
