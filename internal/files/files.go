@@ -141,7 +141,7 @@ func SudoCopyDir(src, dst string) error {
 func sudoExists() bool {
 	var out bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := exec.Command("/bin/sh", "-c", `"which sudo"`)
+	cmd := exec.Command("sudo", "-V")
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	err := cmd.Run()
