@@ -17,7 +17,7 @@ var selectVersion = &cobra.Command{
 		if err != nil {
 			fmt.Println("Error parsing app name flag: ", err)
 		}
-		versions.Select(selection)
+		versions.Select(selection, false)
 	},
 }
 

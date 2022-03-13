@@ -2,6 +2,7 @@ package versions
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"freshgo/internal/files"
 	gvhttp "freshgo/pkg/http"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	vers "github.com/hashicorp/go-version"
-	"golang.org/x/net/html"
 )
 
 var (
@@ -27,97 +27,78 @@ const (
 	//versionPrefix = "<a class=\"download\" href=\"/dl/"
 )
 
-func Select(selection string) {
-	_, err := CurrentVersion()
+type GoVersion struct {
+	Name   string `json:"version"`
+	Stable bool   `json:"stable"`
+	Files  []File `json:"files"`
+}
+
+type File struct {
+	Name    string `json:"filename"`
+	OS      string `json:"os"`
+	Arch    string `json:"arch"`
+	Version string `json:"version"`
+	SHA256  string `json:"sha256"`
+	Size    int    `json:"size"`
+	Kind    string `json:"kind"`
+}
+
+func Select(selection string, onlyNewer bool) {
+	current, err := CurrentVersion()
 	isUpgrade := true
 	if err != nil {
 		isUpgrade = false
 	}
+	versions, err := getVersions()
+	if err != nil {
+		fmt.Println("error: getting versions failed - ", err)
+	}
+	var versReq GoVersion
 	if selection == "latest" {
-		cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
-		resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
-		if err != nil {
-			fmt.Println("Error getting versions: ", err)
-		}
-		latest, err := vers.NewVersion(LookUpLatest(string(resp)))
+		versReq = LookUpLatest(versions, true)
+	} else {
+		versReq, err = lookUpVersion(versions, selection)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		err = InstallVersion(latest, isUpgrade)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		return
 	}
-	selectVers, err := vers.NewVersion(selection)
-	if err != nil {
-		fmt.Println(err)
-	}
-	err = InstallVersion(selectVers, isUpgrade)
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-func Latest() {
-	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
-	resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
-	if err != nil {
-		fmt.Println("Error getting versions: ", err)
-	}
-	latest, err := vers.NewVersion(LookUpLatest(string(resp)))
+	semVer, err := vers.NewVersion(strings.TrimPrefix(versReq.Name, "go"))
 	if err != nil {
 		fmt.Println("error: could not get latest version.")
 		return
 	}
-	comp := 1
-	current := &vers.Version{}
-	c, err := CurrentVersion()
-	isUpgrade := false
+	newer, isUpgrade, err := compare(semVer)
 	if err != nil {
-		fmt.Println("[INFO]: no installed go version.")
-	} else {
-		isUpgrade = true
-		current, err = vers.NewVersion(c)
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println(current)
-		comp = latest.Compare(current)
-		is := ""
-		switch comp {
-		case -1:
-			is = "older than"
-		case 1:
-			is = "newer than"
-		default:
-			is = "equal to"
-		}
-		fmt.Printf("The latest go version is %v, which is %s the current %v \n", latest.String(), is, current.String())
+		fmt.Println("error: could not compare versions - ", err)
 	}
-	if comp == 1 {
-		if !promptInstall(isUpgrade) {
+	if onlyNewer && !newer {
+		return
+	}
+	if !promptInstall(isUpgrade) {
+		return
+	}
+	if promptBackup(isUpgrade) {
+		curDir, err := files.GetGoSrcPath(OS)
+		if err != nil {
+			fmt.Println("Error getting go bin dir: ", err)
 			return
 		}
-		if promptBackup(isUpgrade) {
-			curDir, err := files.GetGoSrcPath(OS)
-			if err != nil {
-				fmt.Println("Error getting go bin dir: ", err)
-				return
-			}
-			err = files.BackUp(curDir, current.String())
-			if err != nil {
-				fmt.Println("Error taking backup: ", err)
-				return
-			}
-
-		}
-		err := InstallVersion(latest, isUpgrade)
+		err = files.BackUp(curDir, current)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Error taking backup: ", err)
+			return
 		}
 	}
+	err = InstallVersion(semVer, isUpgrade)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func Latest() {
+	Select("latest", true)
 }
 
 func InstallVersion(version *vers.Version, isUpgrade bool) error {
@@ -131,8 +112,8 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 			return err
 		}
 	}
-	downloadPath := versionTmpPathLin + files.GetFileNameFromPath(version.String())
-	fmt.Printf(" - Downloading version %s to path %s.\n", version, downloadPath)
+	downloadPath := versionTmpPathLin + "go" + version.String()
+	fmt.Printf(" - Downloading version %s to path %s.\n", "go"+version.String(), downloadPath)
 	dlVers := dlGoVersionFormat(version.String())
 	err := downloadToPath("https://go.dev"+dlVers, downloadPath)
 	if err != nil {
@@ -148,20 +129,17 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 		if err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
 	}
 	fmt.Printf(" - Untaring downloaded version from %s to %s.\n", downloadPath, versionTmpPathLin)
 	err = files.UnTarGz(downloadPath, versionTmpPathLin)
 	// err = otiai10.Copy(downloadPath, curGoSrcPath)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
-	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin, curGoSrcPath)
-	err = files.SudoCopyDir(versionTmpPathLin+"/go", curGoSrcPath)
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin+"go", curGoSrcPath)
+	err = files.SudoCopyDir(versionTmpPathLin+"go", curGoSrcPath)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 	if !isUpgrade {
 		err := files.ExportToPath(curGoSrcPath + "/bin")
@@ -171,53 +149,39 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 	}
 	u, err := CurrentVersion()
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 	updated, err := vers.NewVersion(u)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
 	fmt.Println("Successfully updated go version to: ", updated)
 	return nil
 }
 
 func List() error {
-	cli := gvhttp.NewHTTPClient("GoVersionsURL", "", 10*time.Second, nil, false)
-	resp, err := cli.Request("GET", "https://go.dev/dl/", nil, "", "", nil)
+	versions, err := getVersions()
 	if err != nil {
-		fmt.Println("Error getting versions: ", err)
+		return err
 	}
-	z := html.NewTokenizer(strings.NewReader(string(resp)))
-	for z.Next() != html.ErrorToken {
-		tt := z.Next()
-		found := false
-		switch {
-		case tt == html.ErrorToken:
-			// End of the document, we're done
-			return fmt.Errorf("could not find latest %s-%s version metadata", OS, Architecture)
-		case tt == html.StartTagToken:
-			t := z.Token()
-			if len(t.Attr) > 1 {
-				for i := range t.Attr {
-					if t.Attr[i].Key == "id" && strings.Contains(t.Attr[i].Val, "go") {
-						fmt.Print("• " + strings.TrimPrefix(t.Attr[i].Val, "go") + " ")
-						found = true
-					}
-				}
-			}
-			if t.Data == "a" && versionTag(t.Attr, strings.ToLower(OS+"-"+Architecture)) && !found {
-				fmt.Print("• " + parseVersion(t.Attr[1].Val) + " ")
-			}
-		}
+	for i := range versions {
+		fmt.Print("• " + strings.TrimPrefix(versions[i].Name, "go") + " ")
 	}
 	return nil
 }
-
+func lookUpVersion(versions []GoVersion, name string) (GoVersion, error) {
+	for i := range versions {
+		if strings.TrimPrefix(versions[i].Name, "go") == strings.TrimPrefix(name, "go") {
+			return versions[i], nil
+		}
+	}
+	return GoVersion{}, fmt.Errorf("error: version '%s' notfound", name)
+}
 func downloadToPath(url string, path string) error {
-	cli := gvhttp.NewHTTPClient("GoDownload", "", 60*time.Second, nil, false)
+	cli := gvhttp.NewHTTPClient("Freshgo", "", 60*time.Second, nil, false)
 	resp, err := cli.Request("GET", url, nil, "", "", nil)
 	if err != nil {
-		fmt.Println("Error getting versions: ", err)
+		return fmt.Errorf("error getting versions: %v", err)
 	}
 	out, err := os.Create(path)
 	if err != nil {
@@ -229,51 +193,17 @@ func downloadToPath(url string, path string) error {
 	return err
 }
 
-func LookUpLatest(body string) (version string) {
-	z := html.NewTokenizer(strings.NewReader(body))
-	found := false
-	for !found {
-		tt := z.Next()
-
-		switch {
-		case tt == html.ErrorToken:
-			// End of the document, we're done
-			return ""
-		case tt == html.StartTagToken:
-			t := z.Token()
-			if t.Data == "a" && latestVersionTag(t.Attr) {
-				version = parseVersionFile(t.Attr[1].Val)
-				found = true
-			}
+func LookUpLatest(versions []GoVersion, wantStable bool) (version GoVersion) {
+	for i := range versions {
+		if !wantStable {
+			return versions[i]
+		} else if wantStable == versions[i].Stable {
+			return versions[i]
 		}
 	}
-	return version
+	return GoVersion{}
 }
 
-func latestVersionTag(attr []html.Attribute) bool {
-	return (attr[0].Key == "class" && attr[0].Val == "download" && attr[1].Key == "href" && strings.HasPrefix(attr[1].Val, "/dl/go1"))
-}
-func versionTag(attr []html.Attribute, system string) bool {
-	return (attr[0].Key == "class" && attr[0].Val == "download" && attr[1].Key == "href" && strings.Contains(attr[1].Val, system))
-}
-func parseVersionFile(value string) (version string) {
-	switch strings.ToLower(OS) {
-	case "windows":
-		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), ".src.zip")
-	default:
-		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), ".src.tar.gz")
-	}
-	return version
-}
-func parseVersion(value string) (version string) {
-	switch strings.ToLower(OS) {
-	case "windows":
-		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), "."+strings.ToLower(OS+"-"+Architecture)+".zip")
-	default:
-		version = strings.TrimSuffix(strings.TrimPrefix(value, "/dl/go"), "."+strings.ToLower(OS+"-"+Architecture)+".tar.gz")
-	}
-	return version
-}
 func CurrentVersion() (string, error) {
 	var out bytes.Buffer
 	cmd := exec.Command("go", "version")
@@ -304,6 +234,49 @@ func promptBackup(upgrade bool) bool {
 		return prompt == "Y"
 	}
 	return false
+}
+func getVersions() ([]GoVersion, error) {
+	cli := gvhttp.NewHTTPClient("Freshgo", "", 10*time.Second, nil, false)
+	resp, err := cli.Request("GET", "https://go.dev/dl/?mode=json&include=all", nil, "", "", nil)
+	if err != nil {
+		return nil, err
+	}
+	var versions []GoVersion
+	err = json.Unmarshal(resp, &versions)
+	if err != nil {
+		return nil, err
+	}
+	return versions, nil
+}
+
+func compare(upstream *vers.Version) (newer, isUpgrade bool, err error) {
+	comp := 1
+	c, err := CurrentVersion()
+	if err != nil {
+		fmt.Println("[INFO]: no installed go version.")
+		return true, false, nil
+	} else {
+		isUpgrade = true
+		current, err := vers.NewVersion(c)
+		if err != nil {
+			fmt.Println(err)
+		}
+		comp = upstream.Compare(current)
+		is := ""
+		switch comp {
+		case -1:
+			is = "older than"
+			newer = false
+		case 1:
+			is = "newer than"
+			newer = true
+		default:
+			is = "equal to"
+			newer = false
+		}
+		fmt.Printf("The latest go version is %v, which is %s the current %v \n", upstream.String(), is, current.String())
+	}
+	return newer, isUpgrade, err
 }
 
 func deleteCurrentVersion() error {
