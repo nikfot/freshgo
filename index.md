@@ -1,6 +1,5 @@
 ## Freshgo, the golang version manager 🔖
 - ***lightweight*** go binary 🤸‍♀️
-- ***http-scraping*** live go version catalog 🕸️
 - ***no git*** installation required ⚙️
 
 ![fresh go with Freshgo!](https://github.com/nikfot/freshgo/blob/gh-pages/freshgo.png?raw=true)
