@@ -156,3 +156,13 @@ func ExportToPath(dir string) error {
 	}
 	return nil
 }
+
+func SearchFile(dir, filename string) error {
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && info.Name() == filename {
+			println(info.Name())
+		}
+		return nil
+	})
+	return err
+}

@@ -296,6 +296,8 @@ func deleteCurrentVersion() error {
 }
 
 func dlGoVersionFormat(version string) string {
+	// in case this is the first minor version ie 1.18
+	version = strings.TrimSuffix(version, ".0")
 	switch strings.ToLower(OS) {
 	case "windows":
 		return "/dl/go" + version + "." + strings.ToLower(OS) + "-" + strings.ToLower(Architecture) + ".zip"
