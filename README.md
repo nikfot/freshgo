@@ -1,5 +1,5 @@
 # freshgo
-Simple go version updater with web scraping to get versions
+Simple go version updater
 
 _This is a simple cli application aimed for people now starting with golang, or those who need an update on the latest stable version at all times!_
 
@@ -7,7 +7,6 @@ _This is a simple cli application aimed for people now starting with golang, or 
 
 ## Freshgo, the golang version manager 🔖
 - ***lightweight*** go binary 🤸‍♀️
-- ***http-scraping*** live go version catalog 🕸️
 - ***no git*** installation required ⚙️
 
 Use freshgo to **easily** install and manage your golang versions.
