@@ -306,6 +306,15 @@ func dlGoVersionFormat(version string) string {
 	}
 }
 
+// AddAlias adds an alias to the shell's rc file.
+func AddAlias() error {
+	rcs, err := files.GetRCFiles()
+	if err != nil && !strings.Contains(err.Error(), "{DEBUG]") {
+		return err
+	}
+
+}
+
 func init() {
 	if OS == "" {
 		OS = "linux"

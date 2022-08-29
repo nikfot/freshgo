@@ -166,3 +166,22 @@ func SearchFile(dir, filename string) error {
 	})
 	return err
 }
+
+func GetRCFiles() (rcs []string, err error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	_, errBash := os.Stat(home + "/.bashrc")
+	if errBash == nil {
+		rcs = append(rcs, home+"/.bashrc")
+	}
+	err = fmt.Errorf("[DEBUG]: %v", errBash)
+	_, errZsh := os.Stat(home + "/.zshrc")
+	if errZsh == nil {
+		rcs = append(rcs, home+"/.zshrc")
+	} else {
+		err = fmt.Errorf("[DEBUG] %v : %v", err, errZsh)
+	}
+	return rcs, err
+}
