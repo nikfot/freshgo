@@ -54,18 +54,22 @@ func GetFileNameFromPath(dir string) string {
 }
 
 func Remove(dir string) error {
-	if _, err := os.Stat(dir); !os.IsExist(err) {
-		var out bytes.Buffer
-		cmd := exec.Command("/bin/sh", "-c", "sudo rm -rf "+dir)
-		cmd.Stdout = &out
-		err := cmd.Run()
-		if err != nil {
-			return err
+	if filepath.Dir(dir)!="/"{ 
+		if _, err := os.Stat(dir); !os.IsExist(err) {
+			var out bytes.Buffer
+			cmd := exec.Command("/bin/sh", "-c", "sudo rm -rf "+dir)
+			cmd.Stdout = &out
+			err := cmd.Run()
+			if err != nil {
+				return err
+			}
+			return nil
 		}
-		return nil
+		return fmt.Errorf("error: file %s does not exist", dir)
 	}
-	return fmt.Errorf("error: file %s does not exist", dir)
+	return fmt.Errorf("error: cannot remove folders in parent directory - %s",dir)
 }
+
 func UnTarGz(tarGzName, xpath string) (err error) {
 	gzreader, err := os.Open(tarGzName)
 	defer gzreader.Close()
