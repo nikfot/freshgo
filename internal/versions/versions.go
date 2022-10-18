@@ -22,7 +22,7 @@ var (
 
 const (
 	versionTmpPathLin = "/tmp/freshgo/"
-
+	gobin             = "/usr/local/go/bin"
 	//linuxOS        = "linux-amd64"
 	//versionPrefix = "<a class=\"download\" href=\"/dl/"
 )
@@ -46,8 +46,13 @@ type File struct {
 func Select(selection string, onlyNewer bool) {
 	current, err := CurrentVersion()
 	isUpgrade := true
+	inPath := true
 	if err != nil {
 		isUpgrade = false
+		envpath := os.Getenv("PATH")
+		if !strings.Contains(envpath, gobin) {
+			inPath = false
+		}
 	}
 	versions, err := getVersions()
 	if err != nil {
@@ -95,6 +100,14 @@ func Select(selection string, onlyNewer bool) {
 		fmt.Println(err)
 		return
 	}
+	if !inPath {
+		fmt.Println(" - Go binary not found in path. Adding export to shell config file.")
+		err = files.AddToPath(gobin)
+		if err != nil {
+			fmt.Printf("error: could not update profile - %s \n", err)
+		}
+	}
+	fmt.Println("[FRESHGO, OK TO GO!]")
 }
 
 func Latest() {
