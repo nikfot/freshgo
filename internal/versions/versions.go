@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"freshgo/internal/checks"
 	"freshgo/internal/files"
 	gvhttp "freshgo/pkg/http"
 	"io"
@@ -13,11 +14,6 @@ import (
 	"time"
 
 	vers "github.com/hashicorp/go-version"
-)
-
-var (
-	OS           string
-	Architecture string
 )
 
 const (
@@ -44,7 +40,10 @@ type File struct {
 }
 
 func Select(selection string, onlyNewer bool) {
-	current, err := CurrentVersion()
+	instStatus, err := checks.InstallationStatus()
+	if err != nil {
+		fmt.Printf("error: install status not ok - %s", err)
+	}
 	isUpgrade := true
 	inPath := true
 	if err != nil {
@@ -84,12 +83,11 @@ func Select(selection string, onlyNewer bool) {
 		return
 	}
 	if promptBackup(isUpgrade) {
-		curDir, err := files.GetGoSrcPath(OS)
 		if err != nil {
 			fmt.Println("Error getting go bin dir: ", err)
 			return
 		}
-		err = files.BackUp(curDir, current)
+		err = files.BackUp(instStatus.Root, instStatus.Version)
 		if err != nil {
 			fmt.Println("Error taking backup: ", err)
 			return
@@ -115,9 +113,13 @@ func Latest() {
 }
 
 func InstallVersion(version *vers.Version, isUpgrade bool) error {
-	curGoSrcPath := "/usr/local/go"
-	if _, err := os.Stat(curGoSrcPath); err == nil {
-		os.MkdirAll(curGoSrcPath, os.ModePerm)
+	instStatus, err := checks.InstallationStatus()
+	if err != nil {
+		fmt.Printf("error: install status not ok - %s", err)
+	}
+	defaultGoSrcPath := "/usr/local/go"
+	if _, err := os.Stat(instStatus.Root); err == nil {
+		os.MkdirAll(defaultGoSrcPath, os.ModePerm)
 	}
 	if _, err := os.Stat(versionTmpPathLin); os.IsNotExist(err) {
 		err := os.Mkdir(versionTmpPathLin, os.ModePerm)
@@ -128,17 +130,13 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 	downloadPath := versionTmpPathLin + "go" + version.String()
 	fmt.Printf(" - Downloading version %s to path %s.\n", "go"+version.String(), downloadPath)
 	dlVers := dlGoVersionFormat(version.String())
-	err := downloadToPath("https://go.dev"+dlVers, downloadPath)
+	err = downloadToPath("https://go.dev"+dlVers, downloadPath)
 	if err != nil {
 		return err
 	}
 	if isUpgrade {
-		curGoSrcPath, err = files.GetGoSrcPath(OS)
-		if err != nil {
-			return err
-		}
 		fmt.Println(" - Deleting current version.")
-		err = deleteCurrentVersion()
+		err = deleteCurrentVersion(instStatus.Root)
 		if err != nil {
 			return err
 		}
@@ -149,13 +147,13 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin+"go", curGoSrcPath)
-	err = files.SudoCopyDir(versionTmpPathLin+"go", curGoSrcPath)
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin+"go", instStatus.Root)
+	err = files.SudoCopyDir(versionTmpPathLin+"go", instStatus.Root)
 	if err != nil {
 		return err
 	}
 	if !isUpgrade {
-		err := files.ExportToPath(curGoSrcPath + "/bin")
+		err := files.ExportToPath(instStatus.Root + "/bin")
 		if err != nil {
 			return err
 		}
@@ -292,17 +290,9 @@ func compare(upstream *vers.Version) (newer, isUpgrade bool, err error) {
 	return newer, isUpgrade, err
 }
 
-func deleteCurrentVersion() error {
-	curDir, err := files.GetGoSrcPath(OS)
+func deleteCurrentVersion(root string) error {
+	err := files.Remove(strings.TrimSpace(root))
 	if err != nil {
-		return err
-	}
-	if curDir != "" {
-		err = files.Remove(strings.TrimSpace(curDir))
-		if err != nil {
-			return err
-		}
-	} else {
 		return fmt.Errorf("%s", "error: no go src path exists")
 	}
 	return nil
@@ -311,17 +301,17 @@ func deleteCurrentVersion() error {
 func dlGoVersionFormat(version string) string {
 	// in case this is the first minor version ie 1.18
 	version = strings.TrimSuffix(version, ".0")
-	switch strings.ToLower(OS) {
+	switch strings.ToLower(checks.OS) {
 	case "windows":
-		return "/dl/go" + version + "." + strings.ToLower(OS) + "-" + strings.ToLower(Architecture) + ".zip"
+		return "/dl/go" + version + "." + strings.ToLower(checks.OS) + "-" + strings.ToLower(checks.Architecture) + ".zip"
 	default:
-		return "/dl/go" + version + "." + strings.ToLower(OS) + "-" + strings.ToLower(Architecture) + ".tar.gz"
+		return "/dl/go" + version + "." + strings.ToLower(checks.OS) + "-" + strings.ToLower(checks.Architecture) + ".tar.gz"
 	}
 }
 
 func init() {
-	if OS == "" {
-		OS = "linux"
-		Architecture = "amd64"
+	if checks.OS == "" {
+		checks.OS = "linux"
+		checks.Architecture = "amd64"
 	}
 }
