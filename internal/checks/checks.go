@@ -75,3 +75,14 @@ func (s *Status) executablePathIsOK() bool {
 	}
 	return true
 }
+
+func CurrentVersionCMD() (string, error) {
+	var out bytes.Buffer
+	cmd := exec.Command("go", "version")
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(strings.Split(out.String(), " ")[2], "go"), nil
+}

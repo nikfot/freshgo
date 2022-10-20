@@ -1,7 +1,6 @@
 package versions
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"freshgo/internal/checks"
@@ -9,7 +8,6 @@ import (
 	gvhttp "freshgo/pkg/http"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -158,15 +156,11 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 			return err
 		}
 	}
-	u, err := CurrentVersion()
+	newStatus, err := checks.InstallationStatus()
 	if err != nil {
 		return err
 	}
-	updated, err := vers.NewVersion(u)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Successfully updated go version to: ", updated)
+	fmt.Println("Successfully updated go version to: ", newStatus.Version)
 	return nil
 }
 
@@ -215,17 +209,6 @@ func LookUpLatest(versions []GoVersion, wantStable bool) (version GoVersion) {
 	return GoVersion{}
 }
 
-func CurrentVersion() (string, error) {
-	var out bytes.Buffer
-	cmd := exec.Command("go", "version")
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimPrefix(strings.Split(out.String(), " ")[2], "go"), nil
-}
-
 func promptInstall(upgrade bool) bool {
 	if upgrade {
 		fmt.Print("Would you like to upgrade?[Y/n]")
@@ -262,7 +245,7 @@ func getVersions() ([]GoVersion, error) {
 
 func compare(upstream *vers.Version) (newer, isUpgrade bool, err error) {
 	comp := 1
-	c, err := CurrentVersion()
+	c, err := checks.CurrentVersionCMD()
 	if err != nil {
 		fmt.Println("[INFO]: no installed go version.")
 		return true, false, nil
