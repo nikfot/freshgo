@@ -3,6 +3,7 @@ package checks
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,7 @@ type Status struct {
 	Runtime      string
 	Version      string
 	Architecture string
+	FreshgoDir   string
 }
 
 func InstallationStatus() (status Status, err error) {
@@ -85,4 +87,23 @@ func CurrentVersionCMD() (string, error) {
 		return "", err
 	}
 	return strings.TrimPrefix(strings.Split(out.String(), " ")[2], "go"), nil
+}
+
+func FreshgoDir() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	freshgoDir := home + "/.freshgo"
+	_, err = os.Stat(freshgoDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = os.Mkdir(freshgoDir, 644)
+			if err != nil {
+				return err
+			}
+		}
+		return err
+	}
+	return nil
 }
