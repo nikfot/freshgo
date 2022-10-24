@@ -1,61 +1,52 @@
 package versions
 
 import (
-	"encoding/json"
 	"fmt"
 	"freshgo/internal/checks"
+	"freshgo/internal/client"
 	"freshgo/internal/files"
-	gvhttp "freshgo/pkg/http"
-	"io"
+
 	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	vers "github.com/hashicorp/go-version"
 )
 
 const (
+	goVersionsURL     = "https://go.dev/dl/?mode=json&include=all"
 	versionTmpPathLin = "/tmp/freshgo/"
 	gobin             = "/usr/local/go/bin"
 	//linuxOS        = "linux-amd64"
 	//versionPrefix = "<a class=\"download\" href=\"/dl/"
 )
 
-type GoVersion struct {
-	Name   string `json:"version"`
-	Stable bool   `json:"stable"`
-	Files  []File `json:"files"`
-}
-
-type File struct {
-	Name    string `json:"filename"`
-	OS      string `json:"os"`
-	Arch    string `json:"arch"`
-	Version string `json:"version"`
-	SHA256  string `json:"sha256"`
-	Size    int    `json:"size"`
-	Kind    string `json:"kind"`
-}
-
 func Select(selection string, onlyNewer bool) {
 	instStatus, err := checks.InstallationStatus()
 	if err != nil {
 		fmt.Printf("error: install status not ok - %s", err)
+		return
+	}
+	goRoot, err := instStatus.GetGoRoot()
+	if err != nil {
+		fmt.Printf("error: could not get go root- %s", err)
+		return
 	}
 	isUpgrade := true
 	inPath := true
-	if err != nil {
+	if instStatus.Summary == "NOT FOUND" {
 		isUpgrade = false
 		envpath := os.Getenv("PATH")
 		if !strings.Contains(envpath, gobin) {
 			inPath = false
 		}
 	}
-	versions, err := getVersions()
+	versions, err := client.GetVersions()
 	if err != nil {
-		fmt.Println("error: getting versions failed - ", err)
+		fmt.Printf("error: could not get versions - %s", err)
+		os.Exit(1)
 	}
-	var versReq GoVersion
+	var versReq client.GoVersion
 	if selection == "latest" {
 		versReq = LookUpLatest(versions, true)
 	} else {
@@ -85,7 +76,7 @@ func Select(selection string, onlyNewer bool) {
 			fmt.Println("Error getting go bin dir: ", err)
 			return
 		}
-		err = files.BackUp(instStatus.Root, instStatus.Version)
+		err = files.BackUp(goRoot, instStatus.Version)
 		if err != nil {
 			fmt.Println("Error taking backup: ", err)
 			return
@@ -113,11 +104,11 @@ func Latest() {
 func InstallVersion(version *vers.Version, isUpgrade bool) error {
 	instStatus, err := checks.InstallationStatus()
 	if err != nil {
-		fmt.Printf("error: install status not ok - %s", err)
+		return fmt.Errorf("error: install status not ok - %s", err)
 	}
-	defaultGoSrcPath := "/usr/local/go"
-	if _, err := os.Stat(instStatus.Root); err == nil {
-		os.MkdirAll(defaultGoSrcPath, os.ModePerm)
+	goRoot, err := instStatus.GetGoRoot()
+	if err != nil {
+		return fmt.Errorf("error: could not get go root- %s", err)
 	}
 	if _, err := os.Stat(versionTmpPathLin); os.IsNotExist(err) {
 		err := os.Mkdir(versionTmpPathLin, os.ModePerm)
@@ -125,16 +116,19 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 			return err
 		}
 	}
-	downloadPath := versionTmpPathLin + "go" + version.String()
-	fmt.Printf(" - Downloading version %s to path %s.\n", "go"+version.String(), downloadPath)
-	dlVers := dlGoVersionFormat(version.String())
-	err = downloadToPath("https://go.dev"+dlVers, downloadPath)
+	suffix, err := getCompressionSuffix()
 	if err != nil {
-		return err
+		return fmt.Errorf("error: could not decide compression suffix - %s", err)
+	}
+	downloadPath := filepath.Join(instStatus.ArchivesDir, fmt.Sprintf("go%s%s", strings.TrimSuffix(version.String(), ".0"), suffix))
+	fmt.Printf(" - Downloading version %s to path %s.\n", "go"+version.String(), downloadPath)
+	err = Download(strings.TrimSuffix(version.String(), ".0"), downloadPath)
+	if err != nil {
+		return fmt.Errorf("error: could not download version - %s", err)
 	}
 	if isUpgrade {
 		fmt.Println(" - Deleting current version.")
-		err = deleteCurrentVersion(instStatus.Root)
+		err = deleteCurrentVersion(goRoot)
 		if err != nil {
 			return err
 		}
@@ -145,27 +139,58 @@ func InstallVersion(version *vers.Version, isUpgrade bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin+"go", instStatus.Root)
-	err = files.SudoCopyDir(versionTmpPathLin+"go", instStatus.Root)
+	fmt.Printf(" - Copying from %s to %s.\n", versionTmpPathLin+"go", goRoot)
+	err = files.SudoCopyDir(versionTmpPathLin+"go", filepath.Dir(goRoot))
 	if err != nil {
 		return err
 	}
 	if !isUpgrade {
-		err := files.ExportToPath(instStatus.Root + "/bin")
+		err := files.ExportToPath(goRoot + "/bin")
 		if err != nil {
 			return err
 		}
 	}
-	newStatus, err := checks.InstallationStatus()
+	newStatus, err := checks.CurrentVersionCMD()
 	if err != nil {
 		return err
 	}
-	fmt.Println("Successfully updated go version to: ", newStatus.Version)
+	fmt.Println("Successfully updated go version to: ", newStatus)
+	return nil
+}
+func DownloadVersion(version string) error {
+	version = strings.TrimSuffix(version, ".0")
+	instStatus, err := checks.InstallationStatus()
+	if err != nil {
+		return fmt.Errorf("error: install status not ok - %s", err)
+	}
+	suffix, err := getCompressionSuffix()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(instStatus.ArchivesDir, "go"+version+suffix)
+	err = Download(version, path)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
+func Download(version, path string) error {
+	exists, err := checks.ArchiveExistsAndLegit(version, path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		dlVers := dlGoVersionFormat(version)
+		err = client.DownloadToPath("https://go.dev"+dlVers, path)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func List() error {
-	versions, err := getVersions()
+	versions, err := client.GetVersions()
 	if err != nil {
 		return err
 	}
@@ -174,31 +199,16 @@ func List() error {
 	}
 	return nil
 }
-func lookUpVersion(versions []GoVersion, name string) (GoVersion, error) {
+func lookUpVersion(versions []client.GoVersion, name string) (client.GoVersion, error) {
 	for i := range versions {
 		if strings.TrimPrefix(versions[i].Name, "go") == strings.TrimPrefix(name, "go") {
 			return versions[i], nil
 		}
 	}
-	return GoVersion{}, fmt.Errorf("error: version '%s' notfound", name)
-}
-func downloadToPath(url string, path string) error {
-	cli := gvhttp.NewHTTPClient("Freshgo", "", 60*time.Second, nil, false)
-	resp, err := cli.Request("GET", url, nil, "", "", nil)
-	if err != nil {
-		return fmt.Errorf("error getting versions: %v", err)
-	}
-	out, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	// Write the body to file
-	_, err = io.Copy(out, strings.NewReader(string(resp)))
-	return err
+	return client.GoVersion{}, fmt.Errorf("error: version '%s' notfound", name)
 }
 
-func LookUpLatest(versions []GoVersion, wantStable bool) (version GoVersion) {
+func LookUpLatest(versions []client.GoVersion, wantStable bool) (version client.GoVersion) {
 	for i := range versions {
 		if !wantStable {
 			return versions[i]
@@ -206,7 +216,7 @@ func LookUpLatest(versions []GoVersion, wantStable bool) (version GoVersion) {
 			return versions[i]
 		}
 	}
-	return GoVersion{}
+	return client.GoVersion{}
 }
 
 func promptInstall(upgrade bool) bool {
@@ -228,19 +238,6 @@ func promptBackup(upgrade bool) bool {
 		return prompt == "Y"
 	}
 	return false
-}
-func getVersions() ([]GoVersion, error) {
-	cli := gvhttp.NewHTTPClient("Freshgo", "", 10*time.Second, nil, false)
-	resp, err := cli.Request("GET", "https://go.dev/dl/?mode=json&include=all", nil, "", "", nil)
-	if err != nil {
-		return nil, err
-	}
-	var versions []GoVersion
-	err = json.Unmarshal(resp, &versions)
-	if err != nil {
-		return nil, err
-	}
-	return versions, nil
 }
 
 func compare(upstream *vers.Version) (newer, isUpgrade bool, err error) {
@@ -289,6 +286,36 @@ func dlGoVersionFormat(version string) string {
 		return "/dl/go" + version + "." + strings.ToLower(checks.OS) + "-" + strings.ToLower(checks.Architecture) + ".zip"
 	default:
 		return "/dl/go" + version + "." + strings.ToLower(checks.OS) + "-" + strings.ToLower(checks.Architecture) + ".tar.gz"
+	}
+}
+
+func CheckVersionArchives(version string) (bool, error) {
+	instStatus, err := checks.InstallationStatus()
+	if err != nil {
+		return false, fmt.Errorf("error: install status not ok - %s", err)
+	}
+	_, err = os.Stat(instStatus.ArchivesDir)
+	fmt.Println(instStatus.ArchivesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func getCompressionSuffix() (string, error) {
+	status, err := checks.InstallationStatus()
+	if err != nil {
+		return "", err
+	}
+	switch status.Runtime {
+	case "windows":
+		return ".zip", nil
+	default:
+		return ".tar.gz", nil
 	}
 }
 

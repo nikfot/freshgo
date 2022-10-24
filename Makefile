@@ -19,3 +19,6 @@ clean:
 
 run: build
 	cd cmd/cli && ./freshgo latest
+
+install: build
+	sudo mv cmd/cli/freshgo /usr/local/bin/freshgo

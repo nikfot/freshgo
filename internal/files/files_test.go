@@ -28,3 +28,10 @@ func TestPrepend(t *testing.T) {
 		t.Errorf("error removing test file: %s error: %s", profile_test, err)
 	}
 }
+
+func TestGetAcriveShell(t *testing.T) {
+	_, err := files.GetActiveShell()
+	if err != nil {
+		t.Errorf("TestGetAcriveShell - FAIL - %s", err)
+	}
+}

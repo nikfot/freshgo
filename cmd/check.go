@@ -18,7 +18,7 @@ var check = &cobra.Command{
 			fmt.Printf("found not recommended go installation - %s", err)
 			return
 		}
-		fmt.Printf("Go Installation is OK: \n - root: %s\n - executable: %s\n - version: %s\n - os: %s\n", status.Root, status.Executable, status.Version, status.Runtime+"_"+status.Architecture)
+		fmt.Printf("Go Installation is %s: \n - root: %s\n - executable: %s\n - version: %s\n - os: %s\n", status.Summary, status.Root, status.Executable, status.Version, status.Runtime+"_"+status.Architecture)
 	},
 }
 

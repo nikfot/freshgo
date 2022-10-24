@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/mitchellh/go-ps"
 )
 
 func BackUp(dir string, curVersion string) error {
@@ -160,7 +162,7 @@ func AddToPath(gobin string) error {
 	if err != nil {
 		fmt.Printf("error: could not get homedir - %s \n", err)
 	}
-	err = ExportGoBin(dirname+"/"+confFile, gobin)
+	err = ExportGoBin(filepath.Join(dirname, confFile), gobin)
 	if err != nil {
 		return err
 	}
@@ -175,7 +177,7 @@ func ExportGoBin(profile, gobin string) error {
 	}
 	err = ReloadProfile(profile)
 	if err != nil {
-		return fmt.Errorf("error: could not reload file - %s", err)
+		return fmt.Errorf("error: could not reload file - %s %s", err, profile)
 	}
 	return nil
 }
@@ -185,17 +187,14 @@ func Copy(source, destination string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-
 	if !sourceFileStat.Mode().IsRegular() {
 		return 0, fmt.Errorf("irregular file: %s", source)
 	}
-
 	fileData, err := os.Open(source)
 	if err != nil {
 		return 0, err
 	}
 	defer fileData.Close()
-
 	output, err := os.Create(destination)
 	if err != nil {
 		return 0, err
@@ -213,22 +212,13 @@ func ReloadProfile(dir string) error {
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 	cmd := exec.Command(strings.TrimSpace(activeShell), "-c", fmt.Sprintf("source %s", dir))
-	fmt.Println(fmt.Sprintf("source %s", dir))
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	return err
-}
-
-func GetActiveShell() (string, error) {
-	shells := []string{"/bin/sh", "/bin/bash", "/bin/zsh"}
-	for s := range shells {
-		out, err := exec.Command(shells[s], "-c", "echo $SHELL").Output()
-		if err == nil {
-			return string(out), nil
-		}
+	if err != nil {
+		return fmt.Errorf("%s shell: %s command: %s \n", err, activeShell, fmt.Sprintf("source %s", dir))
 	}
-	return "", fmt.Errorf("unsupported shell type - supported shelltypes: %s", shells)
+	return nil
 }
 
 func Prepend(file, new string) error {
@@ -278,4 +268,14 @@ func getConfFile(shell string) string {
 	default:
 		return ".profile"
 	}
+}
+
+func GetActiveShell() (string, error) {
+	parentpid := os.Getppid()
+	proc, err := ps.FindProcess(parentpid)
+	if err != nil {
+		return "", err
+	}
+	shell := proc.Executable()
+	return shell, nil
 }

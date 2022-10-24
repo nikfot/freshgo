@@ -27,9 +27,9 @@ func main() {
 }
 
 func init() {
-	err := checks.FreshgoDir()
+	status, err := checks.InstallationStatus()
 	if err != nil {
-		fmt.Printf("error: could not initialize freshgo installation - %s", err)
+		fmt.Printf("error: could not initialize freshgo installation - %s status: %s", err, status.Summary)
 		os.Exit(1)
 	}
 }
